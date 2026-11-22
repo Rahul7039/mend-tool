@@ -236,6 +236,14 @@ function diffPath(line: string): string {
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const DIFF_GIT_RE = /^diff --git a\/(.+?) b\/(.+)$/;
 
+/** Whether the last body line matching `pred` is followed by a backslash (`\ No newline`) line. */
+function endsWithBackslash(body: Hunk['body'], pred: (b: Hunk['body'][number]) => boolean): boolean {
+  for (let k = body.length - 1; k >= 0; k--) {
+    if (pred(body[k]!)) return body[k + 1] !== undefined && body[k + 1]!.kind === 'bs';
+  }
+  return false;
+}
+
 function unifiedEdits(lines: string[], strict: boolean, moves: Array<[string, string]>): Edit[] {
   const n = lines.length;
   const sections: USection[] = [];
@@ -316,14 +324,7 @@ function unifiedEdits(lines: string[], strict: boolean, moves: Array<[string, st
         if (last.kind === 'ctx' && (last as CLine & { blank?: boolean }).blank === true) body.pop();
         else break;
       }
-      let noNL = false;
-      for (let k = body.length - 1; k >= 0; k--) {
-        const b = body[k]!;
-        if (b.kind === 'ctx' || b.kind === 'new') {
-          noNL = body[k + 1] !== undefined && body[k + 1]!.kind === 'bs';
-          break;
-        }
-      }
+      let noNL = endsWithBackslash(body, (b) => b.kind === 'ctx' || b.kind === 'new');
       cur.hunks.push({ A, body, noNL });
       inHeader = false;
       continue;
@@ -364,9 +365,7 @@ function unifiedEdits(lines: string[], strict: boolean, moves: Array<[string, st
 function creationEndsNoNL(hunks: Hunk[]): boolean {
   for (let h = hunks.length - 1; h >= 0; h--) {
     const body = hunks[h]!.body;
-    let lastPlus = -1;
-    for (let k = 0; k < body.length; k++) if (body[k]!.kind === 'new') lastPlus = k;
-    if (lastPlus >= 0) return body[lastPlus + 1] !== undefined && body[lastPlus + 1]!.kind === 'bs';
+    if (body.some((b) => b.kind === 'new')) return endsWithBackslash(body, (b) => b.kind === 'new');
   }
   return false;
 }
